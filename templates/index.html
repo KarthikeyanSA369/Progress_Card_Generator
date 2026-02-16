@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title style="animation:glow 3s infinite ease-in-out;">Progress Card Generator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .main-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .section-card {
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: white;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+        .status-connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status-disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+<div class="container py-5">
+    <h1 class="text-center mb-4">Student Progress Card Generator</h1>
+    
+    <div class="main-card p-4">
+        <!-- Server Status -->
+        <div class="text-center mb-3">
+            <span id="serverStatus" class="status-badge">Checking server...</span>
+        </div>
+
+        <!-- Upload Section -->
+        <div class="section-card card mb-4 p-4">
+            <h4 class="text-primary"> Upload CSV Dataset</h4>
+            <p class="text-muted small">Upload Your Student Details</p>
+            <input type="file" id="csvFile" class="form-control mb-3" accept=".csv">
+            <button class="btn btn-primary w-100" onclick="uploadFile()">
+                <span id="uploadBtnText">Upload CSV</span>
+            </button>
+            <div id="uploadMsg" class="mt-3"></div>
+        </div>
+        
+        <!-- Generate Card Section -->
+        <div class="section-card card p-4">
+            <h4 class="text-success"> Generate Progress Card</h4>
+            <p class="text-muted small">Enter the exact student Name</p>
+            <input type="text" id="studentName" class="form-control mb-3" placeholder="Enter Student Name">
+            <button class="btn btn-success w-100" onclick="generateCard()">
+                <span id="generateBtnText"> Download PDF Progress Card</span>
+            </button>
+            <div id="cardMsg" class="mt-3"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+let uploaded = false;
+let serverConnected = false;
+
+// Check server connection on page load
+window.addEventListener('load', function() {
+    checkServerConnection();
+});
+
+function checkServerConnection() {
+    const statusBadge = document.getElementById('serverStatus');
+    
+    fetch('/', {
+        method: 'HEAD',
+        cache: 'no-cache'
+    })
+    .then(response => {
+        if (response.ok) {
+            serverConnected = true;
+            statusBadge.className = 'status-badge status-connected';
+            statusBadge.textContent = 'Server Connected';
+        } else {
+            throw new Error('Server responded with error');
+        }
+    })
+    .catch(error => {
+        serverConnected = false;
+        statusBadge.className = 'status-badge status-disconnected';
+        statusBadge.textContent = 'Server Not Running';
+        statusBadge.title = 'Please run: python app.py';
+    });
+}
+
+function uploadFile() {
+    const file = document.getElementById('csvFile').files[0];
+    const uploadMsg = document.getElementById('uploadMsg');
+    const uploadBtn = document.getElementById('uploadBtnText');
+    
+    if (!serverConnected) {
+        uploadMsg.innerHTML = '<div class="alert alert-danger"> Server not running! Please start the Flask server with: <code>python app.py</code></div>';
+        return;
+    }
+    
+    if (!file) {
+        uploadMsg.innerHTML = '<div class="alert alert-warning"> Please select a CSV file first.</div>';
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    // Show loading state
+    uploadBtn.innerHTML = ' Uploading...';
+    uploadMsg.innerHTML = '<div class="alert alert-info"><div class="spinner-border spinner-border-sm me-2"></div>Processing your CSV file...</div>';
+    
+    fetch('/upload', { 
+        method: 'POST', 
+        body: formData 
+    })
+    .then(res => {
+        if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        return res.json();
+    })
+    .then(data => {
+        uploadBtn.innerHTML = 'Upload CSV';
+        
+        if (data.error) {
+            uploadMsg.innerHTML = `<div class="alert alert-danger">? <strong>Error:</strong> ${data.error}</div>`;
+            uploaded = false;
+        } else {
+            uploaded = true;
+            uploadMsg.innerHTML = `
+                <div class="alert alert-success">
+                     <strong>Success!</strong> File uploaded successfully ! !<br>
+                    <small>
+                         Found <strong>${data.students}</strong> students<br>
+                         Subjects: ${data.subjects.join(', ')}
+                    </small>
+                </div>
+            `;
+        }
+    })
+    .catch(err => {
+        uploadBtn.innerHTML = ' Upload CSV';
+        console.error('Upload error:', err);
+        uploadMsg.innerHTML = `
+            <div class="alert alert-danger">
+                <strong>Upload failed!</strong><br>
+                <small>${err.message}</small><br>
+                <small class="text-muted">Make sure Flask server is running: <code>python app.py</code></small>
+            </div>
+        `;
+        uploaded = false;
+        checkServerConnection();
+    });
+}
+
+function generateCard() {
+    const name = document.getElementById('studentName').value.trim();
+    const cardMsg = document.getElementById('cardMsg');
+    const generateBtn = document.getElementById('generateBtnText');
+    
+    if (!serverConnected) {
+        cardMsg.innerHTML = '<div class="alert alert-danger">Server not running! Please start the Flask server with: <code>python app.py</code></div>';
+        return;
+    }
+    
+    if (!uploaded) {
+        cardMsg.innerHTML = '<div class="alert alert-warning"> Please upload a CSV dataset first (Step 1).</div>';
+        return;
+    }
+    
+    if (!name) {
+        cardMsg.innerHTML = '<div class="alert alert-warning">Please enter a student name.</div>';
+        return;
+    }
+    
+    // Show loading state
+    generateBtn.innerHTML = 'Generating PDF...';
+    cardMsg.innerHTML = '<div class="alert alert-info"><div class="spinner-border spinner-border-sm me-2"></div>Creating your progress card...</div>';
+    
+    fetch('/progress_card', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name})
+    })
+    .then(res => {
+        if (!res.ok) {
+            return res.json().then(data => {
+                throw new Error(data.error || 'Failed to generate PDF');
+            });
+        }
+        return res.blob();
+    })
+    .then(blob => {
+        generateBtn.innerHTML = 'Download PDF Progress Card';
+        cardMsg.innerHTML = '<div class="alert alert-success">PDF generated successfully! Download starting...</div>';
+        
+        // Download the PDF
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${name}_progress_card.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    })
+    .catch(err => {
+        generateBtn.innerHTML = 'Download PDF Progress Card';
+        console.error('Generate error:', err);
+        cardMsg.innerHTML = `
+            <div class="alert alert-danger">
+                ? <strong>Error:</strong> ${err.message}<br>
+                <small class="text-muted">Make sure the server is running and the student name is correct.</small>
+            </div>
+        `;
+        checkServerConnection();
+    });
+}
+</script>
+</body>
+</html>
