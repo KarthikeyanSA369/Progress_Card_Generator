@@ -1,4 +1,6 @@
-Flask
+flask
 flask-cors
 pandas
 fpdf
+chardet
+gunicorn
